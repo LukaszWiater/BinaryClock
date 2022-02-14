@@ -18,8 +18,14 @@
 #define SHIFTR_SER_PIN			PORTC0
 #define SHIFTR_SRCLK_PIN		PORTC1
 #define SHIFTR_RCLK_PIN			PORTC2
-#define SHIFTR_ENABLE_PIN		PORTC3
-#define SHIFTR_BUFFER_LENGTH		8
+#define SHIFTR_ENABLE_PORT		PORTB	
+//#define SHIFTR_ENABLE_PIN1		PORTB1
+//#define SHIFTR_ENABLE_PIN2		PORTB2
+#define SHIFTR_BUFFER_LENGTH	8
+#define UP						1
+#define DOWN					0
+#define SHIFTR_MAX_BRIGHTNESS	255
+enum SHIFT_REGISTERS			{SHIFT_R_0, SHIFT_R_1};
 
 // I2C interface
 #define I2C_OK					0
@@ -37,7 +43,7 @@
 #define RTC_BUTTON_PORT			PINB
 #define RTC_BUTTON_PIN			PINB0
 enum SD1307_REGISTERS			{SECONDS, MINUTES, HOURS, DAY, DATE, MONTH, YEAR, CONTROL};
-enum RTC_STATES					{RTC_NORMAL_OP, RTC_HOUR1, RTC_HOUR2, RTC_MINUTES1,RTC_MINUTES2};
+enum RTC_STATES					{RTC_NORMAL_OP, RTC_HOURS, RTC_MINUTES};
 	
 // Button
 #define BUTTON_RELEASED			0
@@ -77,11 +83,14 @@ volatile uint8_t rtc_button_state = BUTTON_IDLE;
 void BlinkLed(volatile uint8_t *port, uint8_t pin);
 void TogglePin(volatile uint8_t *port, uint8_t pin);
 inline uint8_t DecToBDC(uint8_t decimal_num);
+inline uint8_t BDCToDec(uint8_t bdc_num);
 uint8_t ButtonState(uint8_t pin_register, uint8_t pin);
 
 void ShiftRPinConfig();
 void ShiftRSendByte(uint8_t byte);
 void ShiftRUpdateDisplay();
+void ShiftRToggleDisplay(uint8_t shift_r_number);
+inline void ShiftRSetMaxBrightness(uint8_t shift_register_num);
 
 uint8_t I2CSendData(uint8_t device_address, uint8_t data[], const uint8_t num_of_bytes);
 uint8_t I2CReadData(uint8_t device_address, uint8_t data[], const uint8_t num_of_bytes);
@@ -91,11 +100,13 @@ void RTCWriteTime(Time_BCD time_rtc);
 void RTCConfig();
 void RTCInterruptInit();
 void RTCDisplayTime(Time_BCD time_rtc);
-Time_BCD RTCTimeDecToBDC(Time_Dec time_dec);
+Time_BCD RTCTimeDecToBCD(Time_Dec time_dec);
+Time_Dec RTCTimeBDCToDec(Time_BCD time_bcd);
 void RTCButtonUpdate(uint8_t button_state);
-void RTCStateMachine();
+void RTCChangeTime();
 
 void Timer0Init();
+void Timer1Init();
 void Timer2Init();
 	
 ISR(INT0_vect)
@@ -127,7 +138,7 @@ ISR(TIMER0_OVF_vect)
 	// Updating the rtc button's state
 	RTCButtonUpdate(ButtonState(RTC_BUTTON_PORT, RTC_BUTTON_PIN));
 	
-	RTCStateMachine();
+	RTCChangeTime();
 	
 	TCNT0 = 255 - ovf_time;
 }
@@ -142,7 +153,7 @@ int main(void)
 	time_dec.minutes = 59;
 	time_dec.seconds = 0;
 	
-	RTCWriteTime(RTCTimeDecToBDC(time_dec));
+	RTCWriteTime(RTCTimeDecToBCD(time_dec));
 	
 	// configure pin as an output
 	DDRB|=(1<<DDRB1);
@@ -151,7 +162,8 @@ int main(void)
 	RTCConfig();
 	RTCInterruptInit();
 	Timer0Init();
-	Timer2Init();
+	Timer1Init();
+	//Timer2Init();
 	
     while (1) 
     {
@@ -160,6 +172,7 @@ int main(void)
 }
 
 inline uint8_t DecToBDC(uint8_t decimal_num) {return (((decimal_num/10)%10 << 4) | (decimal_num%10));}
+inline uint8_t BDCToDec(uint8_t bdc_num) {return ((bdc_num>>4)*10+(bdc_num&0x0F));}
 
 void BlinkLed(volatile uint8_t *port, uint8_t pin)
 {
@@ -186,13 +199,15 @@ void TogglePin(volatile uint8_t *port, uint8_t pin)
 // ----------------------------------------------------------
 // ShiftR ---------------------------------------------------
 
+/* Configuring microcontroller's pins for usage with the shift register */
 void ShiftRPinConfig()
 {
-	SHIFTR_DDRC |= (1<<SHIFTR_SER_PIN) | (1<<SHIFTR_SRCLK_PIN) | (1<<SHIFTR_RCLK_PIN) | (1<<SHIFTR_ENABLE_PIN);
-	SHIFTR_PORT &= (~(1<<SHIFTR_RCLK_PIN)) & (~(1<<SHIFTR_SRCLK_PIN)) & (~(1<<SHIFTR_ENABLE_PIN));
+	SHIFTR_DDRC |= (1<<SHIFTR_SER_PIN) | (1<<SHIFTR_SRCLK_PIN) | (1<<SHIFTR_RCLK_PIN);
+	SHIFTR_PORT &= (~(1<<SHIFTR_RCLK_PIN)) & (~(1<<SHIFTR_SRCLK_PIN));
 	
 }
 
+/* Sending one byte of data to the shift register */
 void ShiftRSendByte(uint8_t byte)
 {
 	const uint8_t len = 8;
@@ -229,6 +244,37 @@ void ShiftRUpdateDisplay()
 	SHIFTR_PORT^=(1<<SHIFTR_RCLK_PIN);
 }
 
+void ShiftRToggleDisplay(uint8_t shift_r_number)
+{
+	static int16_t counter = 0;
+	static uint8_t direction = UP;
+	const uint8_t MAX_COUNTER = 200;
+	const uint8_t MIN_COUNTER = 0;
+	
+	if(direction == UP)
+		counter+=10;
+	else
+		counter-=10;
+		
+	if(counter >= MAX_COUNTER)
+		direction = DOWN;
+	else if(counter <= MIN_COUNTER)
+		direction = UP;
+		
+	switch (shift_r_number)
+	{
+	case SHIFT_R_0:
+		OCR1A = counter;
+		break;
+		
+	case SHIFT_R_1:
+		OCR1B = counter;
+		break;
+	}
+		
+}
+
+inline void ShiftRSetMaxBrightness(uint8_t shift_register_num){if(shift_register_num == SHIFT_R_0) OCR1A = SHIFTR_MAX_BRIGHTNESS; else OCR1B = SHIFTR_MAX_BRIGHTNESS;}
 
 
 // -------------------------------------------------------
@@ -390,7 +436,7 @@ void RTCDisplayTime(Time_BCD time_rtc)
 	ShiftRUpdateDisplay();
 }
 
-Time_BCD RTCTimeDecToBDC(Time_Dec time_dec)
+Time_BCD RTCTimeDecToBCD(Time_Dec time_dec)
 {
 	Time_BCD time_bcd;
 	
@@ -399,6 +445,17 @@ Time_BCD RTCTimeDecToBDC(Time_Dec time_dec)
 	time_bcd.hours   = DecToBDC(time_dec.hours);
 	
 	return time_bcd;
+}
+
+Time_Dec RTCTimeBDCToDec(Time_BCD time_bcd)
+{
+	Time_Dec time_dec;
+	
+	time_dec.seconds = BDCToDec(time_bcd.seconds);
+	time_dec.minutes = BDCToDec(time_bcd.minutes);
+	time_dec.hours   = BDCToDec(time_bcd.hours);
+	
+	return time_dec;
 }
 
 void RTCButtonUpdate(uint8_t button_state)
@@ -426,52 +483,72 @@ void RTCButtonUpdate(uint8_t button_state)
 	}
 }
 
-void RTCStateMachine()
+/* Function responsible for managing the manual time change (user's input) */
+void RTCChangeTime()
 {
+	const uint8_t MAX_HOURS = 24;
+	const uint8_t MAX_MINUTES = 60;
 	static uint8_t rtc_state = RTC_NORMAL_OP;
-	static Time_BCD temp_time, empt_time;
-	static uint8_t counter = 0;
+	static Time_Dec temp_time_dec; 
 	
+	// If the conditions for entering the "change hours" state are met then enter this state
 	if(rtc_button_state == BUTTON_LONG_PRESSED && rtc_state == RTC_NORMAL_OP)
 	{
-		rtc_state = RTC_HOUR1;
-		temp_time = RTCReadTime();
-		empt_time = temp_time;
-		empt_time.hours &= 0x0F;
+		rtc_state = RTC_HOURS;
+		GICR &= ~(1<<INT0);
+		temp_time_dec = RTCTimeBDCToDec(RTCReadTime());
 		
 		PORTB ^= (1<<PORTB1);
 	}
-	else if(rtc_button_state == BUTTON_LONG_PRESSED && rtc_state == RTC_HOUR1)
-		rtc_state = RTC_HOUR2;
-
-	else if(rtc_button_state == BUTTON_LONG_PRESSED && rtc_state == RTC_HOUR2)
-		rtc_state = RTC_MINUTES1;
-
-	else if(rtc_button_state == BUTTON_LONG_PRESSED && rtc_state == RTC_MINUTES1)
-		rtc_state = RTC_MINUTES2;
-
-	else if(rtc_button_state == BUTTON_LONG_PRESSED && rtc_state == RTC_MINUTES2)
-		rtc_state = RTC_NORMAL_OP;
+	
+	// If the conditions for entering the "change minutes" state are met then enter this state
+	else if(rtc_button_state == BUTTON_LONG_PRESSED && rtc_state == RTC_HOURS)
+	{
+		rtc_state = RTC_MINUTES;
 		
+		PORTB ^= (1<<PORTB1);
+	}
+	
+	// If the conditions for entering the "normal operation" state are met then enter this state
+	else if(rtc_button_state == BUTTON_LONG_PRESSED && rtc_state == RTC_MINUTES)
+	{
+		rtc_state = RTC_NORMAL_OP;
+		RTCWriteTime(RTCTimeDecToBCD(temp_time_dec));
+		GICR |= (1<<INT0);
+		
+		PORTB ^= (1<<PORTB1);
+	}
+	
+	
 	switch (rtc_state)
 	{
-	case RTC_HOUR1:
+	case RTC_HOURS:
 		if(rtc_button_state == BUTTON_SHORT_PRESSED)
-			++temp_time.hours;
-	
-		if(counter == 25)
 		{
-			RTCWriteTime(empt_time);
+			++temp_time_dec.hours;
+			if(temp_time_dec.hours == MAX_HOURS)
+				temp_time_dec.hours = 0;
+				
+			RTCDisplayTime(RTCTimeDecToBCD(temp_time_dec));
 		}
-		else if(counter == 50)
+			
+		ShiftRToggleDisplay(SHIFT_R_0);
+		break;
+		
+	case RTC_MINUTES:
+		if(rtc_button_state == BUTTON_SHORT_PRESSED)
 		{
-			RTCWriteTime(temp_time);
-			counter = 0;
+			++temp_time_dec.minutes;
+			if(temp_time_dec.minutes == MAX_MINUTES)
+				temp_time_dec.minutes = 0;
+			
+			RTCDisplayTime(RTCTimeDecToBCD(temp_time_dec));
 		}
-	
-		++counter;
+			
+		ShiftRToggleDisplay(SHIFT_R_1);
 		break;
 	}
+	
 	
 	rtc_button_state = BUTTON_IDLE;
 }
@@ -509,9 +586,22 @@ void Timer0Init()
 	TIMSK |= (1<<TOIE0);
 }
 
+void Timer1Init()
+{
+	DDRB |= (1<<DDRB2) | (1<<DDRB3);
+	
+	// Fast PWM, 8-bit, inverted mode
+	TCCR1A = (1<<COM1A0) | (1<<COM1A1) | (1<<COM1B0) | (1<<COM1B1) | (1<<WGM10);
+	// Prescaler fclk/1
+	TCCR1B = (1<<WGM12) | (1<<CS10);
+	// PWM duty cycle = 0 (always low)
+	OCR1A = SHIFTR_MAX_BRIGHTNESS;
+	OCR1B = SHIFTR_MAX_BRIGHTNESS;
+}
+
 void Timer2Init()
 {
-	DDRB |= (1<<DDRB3);
+	DDRB |= (1<<DDRB1) | (1<<DDRB1);
 	
 	OCR2 = 0xFF;	
 	// FastPWM, prescaler fclk/8, inverted pwm
