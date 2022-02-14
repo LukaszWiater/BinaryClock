@@ -470,17 +470,26 @@ void RTCButtonUpdate(uint8_t button_state)
 	}
 	else if(button_state == BUTTON_PRESSED)
 	{
-		++counter;
+		if(rtc_button_state != BUTTON_LONG_PRESSED)
+		{
+			if(counter >= BUTTON_LONG_TRESHOLD)
+			{
+				rtc_button_state = BUTTON_LONG_PRESSED;
+				prev_button_state = BUTTON_LONG_PRESSED;
+				counter = 0;
+			}
+			else
+				++counter;
+		}
 	}
 	else if(button_state == BUTTON_RELEASED && prev_button_state == BUTTON_PRESSED)
 	{
+		rtc_button_state = BUTTON_SHORT_PRESSED;
 		prev_button_state = BUTTON_RELEASED;
-		
-		if(counter >= BUTTON_LONG_TRESHOLD)
-			rtc_button_state = BUTTON_LONG_PRESSED;
-		else
-			rtc_button_state = BUTTON_SHORT_PRESSED;
 	}
+	else if(button_state == BUTTON_RELEASED && prev_button_state == BUTTON_LONG_PRESSED)
+		prev_button_state = BUTTON_RELEASED;
+
 }
 
 /* Function responsible for managing the manual time change (user's input) */
