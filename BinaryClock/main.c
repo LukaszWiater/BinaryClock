@@ -19,8 +19,6 @@
 #define SHIFTR_SRCLK_PIN			PORTC1
 #define SHIFTR_RCLK_PIN				PORTC2
 #define SHIFTR_ENABLE_PORT			PORTB	
-//#define SHIFTR_ENABLE_PIN1			PORTB1
-//#define SHIFTR_ENABLE_PIN2			PORTB2
 #define SHIFTR_BUFFER_LENGTH		8
 #define UP							1
 #define DOWN						0
