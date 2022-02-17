@@ -372,7 +372,7 @@ uint8_t I2CReadData(uint8_t device_address, uint8_t data[], const uint8_t num_of
 	
 	
 	// Load data (byte) from TWDR register with NACK
-	TWCR = (1<<TWINT) | (1<<TWEN);				// Wait for TWINT flag set	while(!(TWCR & (1<<TWINT)));			
+	TWCR = (1<<TWINT) | (1<<TWEN);		// Wait for TWINT flag set	while(!(TWCR & (1<<TWINT)));			
 	// Check the status of transmission (SLAVE ACKNOWLEDGE)
 	if ((TWSR & 0xF8) != I2C_MR_DATA_NACK)
 		return I2C_ERROR;
