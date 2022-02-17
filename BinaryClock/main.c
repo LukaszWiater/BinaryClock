@@ -13,45 +13,50 @@
 // MACROS --------------------------------
 
 // Shift register
-#define SHIFTR_PORT				PORTC
-#define SHIFTR_DDRC				DDRC
-#define SHIFTR_SER_PIN			PORTC0
-#define SHIFTR_SRCLK_PIN		PORTC1
-#define SHIFTR_RCLK_PIN			PORTC2
-#define SHIFTR_ENABLE_PORT		PORTB	
-//#define SHIFTR_ENABLE_PIN1		PORTB1
-//#define SHIFTR_ENABLE_PIN2		PORTB2
-#define SHIFTR_BUFFER_LENGTH	8
-#define UP						1
-#define DOWN					0
-#define SHIFTR_MAX_BRIGHTNESS	255
-enum SHIFT_REGISTERS			{SHIFT_R_0, SHIFT_R_1};
+#define SHIFTR_PORT					PORTC
+#define SHIFTR_DDRC					DDRC
+#define SHIFTR_SER_PIN				PORTC0
+#define SHIFTR_SRCLK_PIN			PORTC1
+#define SHIFTR_RCLK_PIN				PORTC2
+#define SHIFTR_ENABLE_PORT			PORTB	
+//#define SHIFTR_ENABLE_PIN1			PORTB1
+//#define SHIFTR_ENABLE_PIN2			PORTB2
+#define SHIFTR_BUFFER_LENGTH		8
+#define UP							1
+#define DOWN						0
+#define SHIFTR_MAX_BRIGHTNESS		255
+enum SHIFT_REGISTERS				{SHIFT_R_0, SHIFT_R_1};
 
 // I2C interface
-#define I2C_OK					0
-#define I2C_ERROR				1
-#define I2C_START				0x08
-#define I2C_SLA_W_ACK			0x18
-#define I2C_MT_DATA_ACK			0x28
-#define I2C_SLA_R_ACK			0x40
-#define I2C_MR_DATA_ACK			0x50
-#define I2C_MR_DATA_NACK		0x58
-#define I2C_BUFFER_LENGTH		8
+#define I2C_OK						0
+#define I2C_ERROR					1
+#define I2C_START					0x08
+#define I2C_SLA_W_ACK				0x18
+#define I2C_MT_DATA_ACK				0x28
+#define I2C_SLA_R_ACK				0x40
+#define I2C_MR_DATA_ACK				0x50
+#define I2C_MR_DATA_NACK			0x58
+#define I2C_BUFFER_LENGTH			8
 
 // Real Time Clock (DS1307)
-#define DS1307_ADDR				0b1101000
-#define RTC_BUTTON_PORT			PINB
-#define RTC_BUTTON_PIN			PINB0
-enum SD1307_REGISTERS			{SECONDS, MINUTES, HOURS, DAY, DATE, MONTH, YEAR, CONTROL};
-enum RTC_STATES					{RTC_NORMAL_OP, RTC_HOURS, RTC_MINUTES};
+#define DS1307_ADDR					0b1101000
+#define RTC_BUTTON_PORT				PINB
+#define RTC_BUTTON_PIN				PINB0
+#define RTC_BUZZER_DDR				DDRD
+#define RTC_BUZZER_PORT				PORTD
+#define RTC_BUZZER_PIN				PORTD0
+#define RTC_BUZZER_BEEP_SHORT_TIME	3
+enum SD1307_REGISTERS				{SECONDS, MINUTES, HOURS, DAY, DATE, MONTH, YEAR, CONTROL};
+enum RTC_STATES						{RTC_NORMAL_OP, RTC_HOURS, RTC_MINUTES};
+enum BUZZER_BEEP_TYPES				{BUZZER_NO_BEEP, BUZZER_BEEP_SHORT, BUZZER_BEEP_LONG, BUZZER_BEEP_CONFIRM};
 	
 // Button
-#define BUTTON_RELEASED			0
-#define BUTTON_PRESSED			1
-#define BUTTON_IDLE				0
-#define BUTTON_SHORT_PRESSED	1
-#define BUTTON_LONG_PRESSED		2
-#define BUTTON_LONG_TRESHOLD	100			// 150 cycles of Timer0
+#define BUTTON_RELEASED				0
+#define BUTTON_PRESSED				1
+#define BUTTON_IDLE					0
+#define BUTTON_SHORT_PRESSED		1
+#define BUTTON_LONG_PRESSED			2
+#define BUTTON_LONG_TRESHOLD		100			// 150 cycles of Timer0
 
 // TYPEDEF ------------------------------
 
@@ -71,10 +76,22 @@ typedef struct
 	
 } Time_Dec;
 
+typedef struct
+{
+	volatile uint8_t *ddr;
+	volatile uint8_t *port;
+	uint8_t pin;
+	uint8_t beep_short_time;
+	uint8_t beep_long_time;
+	volatile uint8_t active_beep_type;
+	
+} Buzzer;
+
 // GLOBAL VARIABLES -----------------------
 
 volatile Time_BCD rtc_current_time;
 volatile uint8_t rtc_button_state = BUTTON_IDLE;
+Buzzer rtc_buzzer;
 //volatile uint8_t rtc_state = RTC_NORMAL_OP;
 
 
@@ -104,6 +121,13 @@ Time_BCD RTCTimeDecToBCD(Time_Dec time_dec);
 Time_Dec RTCTimeBDCToDec(Time_BCD time_bcd);
 void RTCButtonUpdate(uint8_t button_state);
 void RTCChangeTime();
+void RTCBuzzerInit();
+
+Buzzer BuzzerInit(volatile uint8_t *buzzer_ddr, volatile uint8_t *buzzer_port, uint8_t buzzer_pin, uint8_t beep_short_time);
+inline void BuzzerTurnON(volatile uint8_t *buzzer_port, uint8_t buzzer_pin);
+inline void BuzzerTurnOFF(volatile uint8_t *buzzer_port, uint8_t buzzer_pin);
+inline void BuzzerBeep(Buzzer *buzzer, uint8_t beep_type);
+void BuzzerHandler(Buzzer *buzzer);
 
 void Timer0Init();
 void Timer1Init();
@@ -137,8 +161,10 @@ ISR(TIMER0_OVF_vect)
 	
 	// Updating the rtc button's state
 	RTCButtonUpdate(ButtonState(RTC_BUTTON_PORT, RTC_BUTTON_PIN));
-	
+	// Updating change-time-state-machine
 	RTCChangeTime();
+	// Handle the buzzer functioning
+	BuzzerHandler(&rtc_buzzer);
 	
 	TCNT0 = 255 - ovf_time;
 }
@@ -161,6 +187,7 @@ int main(void)
 	ShiftRPinConfig();
 	RTCConfig();
 	RTCInterruptInit();
+	rtc_buzzer = BuzzerInit(&RTC_BUZZER_DDR, &RTC_BUZZER_PORT, RTC_BUZZER_PIN, RTC_BUZZER_BEEP_SHORT_TIME);
 	Timer0Init();
 	Timer1Init();
 	//Timer2Init();
@@ -506,6 +533,7 @@ void RTCChangeTime()
 		rtc_state = RTC_HOURS;
 		GICR &= ~(1<<INT0);
 		temp_time_dec = RTCTimeBDCToDec(RTCReadTime());
+		BuzzerBeep(&rtc_buzzer, BUZZER_BEEP_LONG);
 		
 		PORTB ^= (1<<PORTB1);
 	}
@@ -514,6 +542,7 @@ void RTCChangeTime()
 	else if(rtc_button_state == BUTTON_LONG_PRESSED && rtc_state == RTC_HOURS)
 	{
 		rtc_state = RTC_MINUTES;
+		BuzzerBeep(&rtc_buzzer, BUZZER_BEEP_LONG);
 		
 		PORTB ^= (1<<PORTB1);
 	}
@@ -524,6 +553,7 @@ void RTCChangeTime()
 		rtc_state = RTC_NORMAL_OP;
 		RTCWriteTime(RTCTimeDecToBCD(temp_time_dec));
 		GICR |= (1<<INT0);
+		BuzzerBeep(&rtc_buzzer, BUZZER_BEEP_CONFIRM);
 		
 		PORTB ^= (1<<PORTB1);
 	}
@@ -539,6 +569,7 @@ void RTCChangeTime()
 				temp_time_dec.hours = 0;
 				
 			RTCDisplayTime(RTCTimeDecToBCD(temp_time_dec));
+			BuzzerBeep(&rtc_buzzer, BUZZER_BEEP_SHORT);
 		}
 			
 		ShiftRToggleDisplay(SHIFT_R_0);
@@ -552,6 +583,7 @@ void RTCChangeTime()
 				temp_time_dec.minutes = 0;
 			
 			RTCDisplayTime(RTCTimeDecToBCD(temp_time_dec));
+			BuzzerBeep(&rtc_buzzer, BUZZER_BEEP_SHORT);
 		}
 			
 		ShiftRToggleDisplay(SHIFT_R_1);
@@ -561,6 +593,104 @@ void RTCChangeTime()
 	
 	rtc_button_state = BUTTON_IDLE;
 }
+
+void RTCBuzzerInit()
+{
+	RTC_BUZZER_DDR |= (1<<RTC_BUZZER_PIN);
+	RTC_BUZZER_PORT &= ~(1<<RTC_BUZZER_PIN);
+}
+
+Buzzer BuzzerInit(volatile uint8_t *buzzer_ddr, volatile uint8_t *buzzer_port, uint8_t buzzer_pin, uint8_t beep_short_time)
+{
+	Buzzer new_buzzer;
+	
+	new_buzzer.ddr = buzzer_ddr;
+	new_buzzer.port = buzzer_port;
+	new_buzzer.pin = buzzer_pin;
+	new_buzzer.beep_short_time = beep_short_time;
+	new_buzzer.beep_long_time = 5*beep_short_time;
+	
+	*new_buzzer.ddr |= (1<<new_buzzer.pin);
+	*new_buzzer.port &= ~(1<<new_buzzer.pin);
+	
+	return new_buzzer;
+}
+
+inline void BuzzerTurnON(volatile uint8_t *buzzer_port, uint8_t buzzer_pin) {*buzzer_port |= (1<<buzzer_pin);}
+inline void BuzzerTurnOFF(volatile uint8_t *buzzer_port, uint8_t buzzer_pin) {*buzzer_port &= ~(1<<buzzer_pin);}
+
+/* The function responsible for handling the buzzer - it is placed in timer0 overflow interrupt handler (it is called every time the overflow interrupt occurs) */
+void BuzzerHandler(Buzzer *buzzer)
+{
+	static uint8_t buzzer_counter = 0;
+	
+	switch (buzzer->active_beep_type)
+	{
+	case BUZZER_NO_BEEP:
+		return;
+		break;
+		
+	case BUZZER_BEEP_SHORT:
+		if(buzzer_counter == 0)
+		{
+			BuzzerTurnON(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+		}
+		else if(buzzer_counter >= buzzer->beep_short_time)
+		{
+			BuzzerTurnOFF(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+			buzzer_counter = 0;
+			buzzer->active_beep_type = BUZZER_NO_BEEP;
+			
+			return;
+		}
+		break;
+		
+	case BUZZER_BEEP_LONG:
+		if(buzzer_counter == 0)
+		{
+			BuzzerTurnON(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+		}
+		else if(buzzer_counter >= buzzer->beep_long_time)
+		{
+			BuzzerTurnOFF(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+			buzzer_counter = 0;
+			buzzer->active_beep_type = BUZZER_NO_BEEP;
+			
+			return;
+		}
+		break;
+		
+	case BUZZER_BEEP_CONFIRM:	
+		if(buzzer_counter == 0)
+		BuzzerTurnON(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+
+		else if(buzzer_counter == buzzer->beep_short_time)
+		BuzzerTurnOFF(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+		
+		else if(buzzer_counter == 2*(buzzer->beep_short_time))
+		BuzzerTurnON(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+		
+		else if(buzzer_counter == 3*(buzzer->beep_short_time))
+		BuzzerTurnOFF(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+		
+		else if(buzzer_counter == 4*(buzzer->beep_short_time))
+		BuzzerTurnON(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+		
+		else if(buzzer_counter >= 5*(buzzer->beep_short_time))
+		{
+			BuzzerTurnOFF(&RTC_BUZZER_PORT, RTC_BUZZER_PIN);
+			buzzer_counter = 0;
+			buzzer->active_beep_type = BUZZER_NO_BEEP;
+			
+			return;
+		}
+		break;
+	}
+	
+	++buzzer_counter;
+}
+
+inline void BuzzerBeep(Buzzer *buzzer, uint8_t beep_type) {buzzer->active_beep_type = beep_type;}
 
 uint8_t ButtonState(uint8_t pin_register, uint8_t pin)
 {
