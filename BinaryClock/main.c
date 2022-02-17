@@ -25,7 +25,7 @@
 #define UP							1
 #define DOWN						0
 #define SHIFTR_MAX_BRIGHTNESS		255
-enum SHIFT_REGISTERS				{SHIFT_R_0, SHIFT_R_1};
+enum SHIFT_REGISTERS				{SHIFT_R_HOURS, SHIFT_R_MINUTES};
 
 // I2C interface
 #define I2C_OK						0
@@ -107,7 +107,7 @@ void ShiftRPinConfig();
 void ShiftRSendByte(uint8_t byte);
 void ShiftRUpdateDisplay();
 void ShiftRToggleDisplay(uint8_t shift_r_number);
-inline void ShiftRSetMaxBrightness(uint8_t shift_register_num);
+inline void ShiftRSetMaxBrightness(uint8_t shift_register);
 
 uint8_t I2CSendData(uint8_t device_address, uint8_t data[], const uint8_t num_of_bytes);
 uint8_t I2CReadData(uint8_t device_address, uint8_t data[], const uint8_t num_of_bytes);
@@ -290,18 +290,18 @@ void ShiftRToggleDisplay(uint8_t shift_r_number)
 		
 	switch (shift_r_number)
 	{
-	case SHIFT_R_0:
+	case SHIFT_R_HOURS:
 		OCR1A = counter;
 		break;
 		
-	case SHIFT_R_1:
+	case SHIFT_R_MINUTES:
 		OCR1B = counter;
 		break;
 	}
 		
 }
 
-inline void ShiftRSetMaxBrightness(uint8_t shift_register_num){if(shift_register_num == SHIFT_R_0) OCR1A = SHIFTR_MAX_BRIGHTNESS; else OCR1B = SHIFTR_MAX_BRIGHTNESS;}
+inline void ShiftRSetMaxBrightness(uint8_t shift_register){if(shift_register == SHIFT_R_HOURS) OCR1A = SHIFTR_MAX_BRIGHTNESS; else OCR1B = SHIFTR_MAX_BRIGHTNESS;}
 
 
 // -------------------------------------------------------
@@ -542,6 +542,7 @@ void RTCChangeTime()
 	else if(rtc_button_state == BUTTON_LONG_PRESSED && rtc_state == RTC_HOURS)
 	{
 		rtc_state = RTC_MINUTES;
+		ShiftRSetMaxBrightness(SHIFT_R_HOURS);
 		BuzzerBeep(&rtc_buzzer, BUZZER_BEEP_LONG);
 		
 		PORTB ^= (1<<PORTB1);
@@ -553,6 +554,7 @@ void RTCChangeTime()
 		rtc_state = RTC_NORMAL_OP;
 		RTCWriteTime(RTCTimeDecToBCD(temp_time_dec));
 		GICR |= (1<<INT0);
+		ShiftRSetMaxBrightness(SHIFT_R_MINUTES);
 		BuzzerBeep(&rtc_buzzer, BUZZER_BEEP_CONFIRM);
 		
 		PORTB ^= (1<<PORTB1);
@@ -572,7 +574,7 @@ void RTCChangeTime()
 			BuzzerBeep(&rtc_buzzer, BUZZER_BEEP_SHORT);
 		}
 			
-		ShiftRToggleDisplay(SHIFT_R_0);
+		ShiftRToggleDisplay(SHIFT_R_HOURS);
 		break;
 		
 	case RTC_MINUTES:
@@ -586,7 +588,7 @@ void RTCChangeTime()
 			BuzzerBeep(&rtc_buzzer, BUZZER_BEEP_SHORT);
 		}
 			
-		ShiftRToggleDisplay(SHIFT_R_1);
+		ShiftRToggleDisplay(SHIFT_R_MINUTES);
 		break;
 	}
 	
