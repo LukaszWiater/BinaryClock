@@ -13,22 +13,22 @@
 // MACROS --------------------------------
 
 // Shift register
-#define SHIFTR_PORT					PORTC
-#define SHIFTR_DDRC					DDRC
+#define SHIFTR_PORT				PORTC
+#define SHIFTR_DDRC				DDRC
 #define SHIFTR_SER_PIN				PORTC0
 #define SHIFTR_SRCLK_PIN			PORTC1
 #define SHIFTR_RCLK_PIN				PORTC2
 #define SHIFTR_ENABLE_PORT			PORTB	
-#define SHIFTR_BUFFER_LENGTH		8
-#define UP							1
-#define DOWN						0
-#define SHIFTR_MAX_BRIGHTNESS		255
+#define SHIFTR_BUFFER_LENGTH			8
+#define UP					1
+#define DOWN					0
+#define SHIFTR_MAX_BRIGHTNESS			255
 enum SHIFT_REGISTERS				{SHIFT_R_HOURS, SHIFT_R_MINUTES};
 
 // I2C interface
-#define I2C_OK						0
-#define I2C_ERROR					1
-#define I2C_START					0x08
+#define I2C_OK					0
+#define I2C_ERROR				1
+#define I2C_START				0x08
 #define I2C_SLA_W_ACK				0x18
 #define I2C_MT_DATA_ACK				0x28
 #define I2C_SLA_R_ACK				0x40
@@ -37,24 +37,24 @@ enum SHIFT_REGISTERS				{SHIFT_R_HOURS, SHIFT_R_MINUTES};
 #define I2C_BUFFER_LENGTH			8
 
 // Real Time Clock (DS1307)
-#define DS1307_ADDR					0b1101000
+#define DS1307_ADDR				0b1101000
 #define RTC_BUTTON_PORT				PINB
 #define RTC_BUTTON_PIN				PINB0
 #define RTC_BUZZER_DDR				DDRD
 #define RTC_BUZZER_PORT				PORTD
 #define RTC_BUZZER_PIN				PORTD0
-#define RTC_BUZZER_BEEP_SHORT_TIME	3
+#define RTC_BUZZER_BEEP_SHORT_TIME		3
 enum SD1307_REGISTERS				{SECONDS, MINUTES, HOURS, DAY, DATE, MONTH, YEAR, CONTROL};
-enum RTC_STATES						{RTC_NORMAL_OP, RTC_HOURS, RTC_MINUTES};
+enum RTC_STATES					{RTC_NORMAL_OP, RTC_HOURS, RTC_MINUTES};
 enum BUZZER_BEEP_TYPES				{BUZZER_NO_BEEP, BUZZER_BEEP_SHORT, BUZZER_BEEP_LONG, BUZZER_BEEP_CONFIRM};
 	
 // Button
 #define BUTTON_RELEASED				0
 #define BUTTON_PRESSED				1
-#define BUTTON_IDLE					0
-#define BUTTON_SHORT_PRESSED		1
+#define BUTTON_IDLE				0
+#define BUTTON_SHORT_PRESSED			1
 #define BUTTON_LONG_PRESSED			2
-#define BUTTON_LONG_TRESHOLD		100			// 150 cycles of Timer0
+#define BUTTON_LONG_TRESHOLD			100			// 150 cycles of Timer0
 
 // TYPEDEF ------------------------------
 
@@ -319,7 +319,11 @@ uint8_t I2CSendData(uint8_t device_address, uint8_t data[], const uint8_t num_of
 		
 	// Load data (device address) into TWDR register
 	TWDR = (device_address << 1);
-	TWCR = (1<<TWINT) | (1<<TWEN);		// Wait for TWINT flag set	while(!(TWCR & (1<<TWINT)));	
+	TWCR = (1<<TWINT) | (1<<TWEN);	
+	
+	// Wait for TWINT flag set
+	while(!(TWCR & (1<<TWINT)));
+
 	// Check the status of transmission (SLAVE ACKNOWLEDGE)
 	if ((TWSR & 0xF8) != I2C_SLA_W_ACK)
 		return I2C_ERROR;
@@ -328,7 +332,11 @@ uint8_t I2CSendData(uint8_t device_address, uint8_t data[], const uint8_t num_of
 	{	
 		// Load data (byte) into TWDR register
 		TWDR = data[i];
-		TWCR = (1<<TWINT) | (1<<TWEN);				// Wait for TWINT flag set		while(!(TWCR & (1<<TWINT)));		
+		TWCR = (1<<TWINT) | (1<<TWEN);
+
+		// Wait for TWINT flag set
+		while(!(TWCR & (1<<TWINT)));
+
 		// Check the status of transmission (SLAVE ACKNOWLEDGE)
 		if ((TWSR & 0xF8) != I2C_MT_DATA_ACK)
 			return I2C_ERROR;
@@ -354,7 +362,11 @@ uint8_t I2CReadData(uint8_t device_address, uint8_t data[], const uint8_t num_of
 	
 	// Load data (device address) into TWDR register
 	TWDR = ((device_address<<1) | 0x01);
-	TWCR = (1<<TWINT) | (1<<TWEN);		// Wait for TWINT flag set	while(!(TWCR & (1<<TWINT)));	
+	TWCR = (1<<TWINT) | (1<<TWEN);
+
+	// Wait for TWINT flag set
+	while(!(TWCR & (1<<TWINT)));
+
 	// Check the status of transmission (SLAVE ACKNOWLEDGE)
 	if ((TWSR & 0xF8) != I2C_SLA_R_ACK)
 		return I2C_ERROR;
@@ -362,7 +374,11 @@ uint8_t I2CReadData(uint8_t device_address, uint8_t data[], const uint8_t num_of
 	for(int i=0;i<num_of_bytes-1;i++)
 	{
 		// Load data (byte) from TWDR register with ACK
-		TWCR = (1<<TWINT) | (1<<TWEN) | (1<<TWEA);				// Wait for TWINT flag set		while(!(TWCR & (1<<TWINT)));		
+		TWCR = (1<<TWINT) | (1<<TWEN) | (1<<TWEA);
+
+		// Wait for TWINT flag set
+		while(!(TWCR & (1<<TWINT)));
+
 		// Check the status of transmission (SLAVE ACKNOWLEDGE)
 		if ((TWSR & 0xF8) != I2C_MR_DATA_ACK)
 			return I2C_ERROR;
@@ -372,7 +388,11 @@ uint8_t I2CReadData(uint8_t device_address, uint8_t data[], const uint8_t num_of
 	
 	
 	// Load data (byte) from TWDR register with NACK
-	TWCR = (1<<TWINT) | (1<<TWEN);		// Wait for TWINT flag set	while(!(TWCR & (1<<TWINT)));			
+	TWCR = (1<<TWINT) | (1<<TWEN);
+
+	// Wait for TWINT flag set
+	while(!(TWCR & (1<<TWINT)));
+
 	// Check the status of transmission (SLAVE ACKNOWLEDGE)
 	if ((TWSR & 0xF8) != I2C_MR_DATA_NACK)
 		return I2C_ERROR;
